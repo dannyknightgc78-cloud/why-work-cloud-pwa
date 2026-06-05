@@ -7,7 +7,7 @@ import MainApp from "./pages/MainApp";
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
-
+  // make sure to consider if you need authentication for certain routes
   return (
     <div className="h-full" style={{ background: "#000", color: "#e0f4ff" }}>
       <Toaster theme="dark" />

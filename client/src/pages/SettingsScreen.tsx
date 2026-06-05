@@ -1,12 +1,14 @@
 // WHY WORK CLOUD IT PWA — Settings Screen
 // Design: Obsidian Command Interface — sci-fi settings with persistent Google auth
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useGoogleAuth } from "../contexts/GoogleAuthContext";
+import { usePushNotifications } from "../hooks/usePushNotifications";
 
 const BASE_URL = "https://genie.dannygc.cloud";
 
 export default function SettingsScreen() {
   const { connected, user, connect, disconnect, loading: authLoading } = useGoogleAuth();
+  const { isSupported: pushSupported, permission: pushPermission, isSubscribed, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePushNotifications();
 
   // SMS Settings
   const [smsPhone, setSmsPhone] = useState(() => localStorage.getItem("genie_sms_phone") || "");
@@ -224,6 +226,46 @@ export default function SettingsScreen() {
             </button>
           ))}
         </div>
+      </Section>
+
+      {/* Push Notifications */}
+      <Section title="PUSH NOTIFICATIONS">
+        {!pushSupported ? (
+          <div style={{ fontSize: 12, color: "rgba(224,244,255,0.4)" }}>
+            Push notifications are not supported in this browser.
+          </div>
+        ) : pushPermission === "denied" ? (
+          <div style={{
+            padding: "12px", borderRadius: 10,
+            background: "rgba(255,68,102,0.05)", border: "1px solid rgba(255,68,102,0.2)",
+          }}>
+            <div style={{ fontSize: 12, color: "#ff4466" }}>Notifications blocked in browser settings.</div>
+            <div style={{ fontSize: 11, color: "rgba(224,244,255,0.4)", marginTop: 6 }}>Go to your browser settings and allow notifications for this site.</div>
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontSize: 12, color: "rgba(224,244,255,0.5)", marginBottom: 12 }}>
+              Get instant alerts for new emails, calendar events, and Genie briefings — even when the app is closed.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <span style={{ fontSize: 13, color: isSubscribed ? "#00ff88" : "rgba(224,244,255,0.6)" }}>
+                {isSubscribed ? "✅ Notifications active" : "🔕 Notifications off"}
+              </span>
+              <button
+                onClick={() => void (isSubscribed ? pushUnsubscribe() : pushSubscribe())}
+                style={{
+                  padding: "10px 18px", borderRadius: 10,
+                  background: isSubscribed ? "rgba(255,68,102,0.1)" : "rgba(0,212,255,0.15)",
+                  border: `1px solid ${isSubscribed ? "rgba(255,68,102,0.4)" : "#00d4ff"}`,
+                  color: isSubscribed ? "#ff4466" : "#00d4ff",
+                  fontFamily: "'Orbitron', sans-serif", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                {isSubscribed ? "DISABLE" : "ENABLE"}
+              </button>
+            </div>
+          </div>
+        )}
       </Section>
 
       {/* About */}
