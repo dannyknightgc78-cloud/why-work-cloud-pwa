@@ -1,43 +1,55 @@
 // WHY WORK CLOUD IT PWA — useTTS Hook
-// iOS-compatible TTS: server-side audio (fetches audio blob) with browser Speech API fallback
-// User can choose mode in Settings. Default: server mode (works on iPhone Safari).
+// iOS-compatible TTS: uses Web Audio API (AudioContext) which works after a single unlock tap.
+// new Audio() is blocked on iOS PWA unless called synchronously inside a user gesture.
+// AudioContext.decodeAudioData() works as long as the context was resumed during any prior tap.
 
 const BASE_URL = "https://genie.dannygc.cloud";
 
-let currentAudio: HTMLAudioElement | null = null;
-let speechSynthesisActive = false;
+// Shared AudioContext — created once and reused
+let _ctx: AudioContext | null = null;
+let _currentSource: AudioBufferSourceNode | null = null;
+let _currentResolve: (() => void) | null = null;
 
-function getTtsMode(): "server" | "browser" {
-  return (localStorage.getItem("genie_tts_mode") as "server" | "browser") || "server";
+function getAudioContext(): AudioContext {
+  if (!_ctx || _ctx.state === "closed") {
+    _ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  return _ctx;
 }
 
-// Unlock AudioContext on first user gesture (required by iOS Safari)
-let audioUnlocked = false;
+// Call this on ANY user tap — resumes the AudioContext so later async playback works
 export function unlockAudio() {
-  if (audioUnlocked) return;
-  const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const ctx = getAudioContext();
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+  // Play a silent buffer to fully unlock on iOS
   const buf = ctx.createBuffer(1, 1, 22050);
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.connect(ctx.destination);
   src.start(0);
-  ctx.resume().catch(() => {});
-  audioUnlocked = true;
 }
 
 export function stopTTS() {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.src = "";
-    currentAudio = null;
+  if (_currentSource) {
+    try { _currentSource.stop(); } catch {}
+    _currentSource = null;
+  }
+  if (_currentResolve) {
+    _currentResolve();
+    _currentResolve = null;
   }
   if (typeof window !== "undefined" && window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
-  speechSynthesisActive = false;
 }
 
-// Split text into sentence chunks for streaming TTS
+function getTtsMode(): "server" | "browser" {
+  return (localStorage.getItem("genie_tts_mode") as "server" | "browser") || "server";
+}
+
+// Split text into sentence chunks
 function splitSentences(text: string): string[] {
   return text
     .replace(/([.!?])\s+/g, "$1\n")
@@ -46,39 +58,42 @@ function splitSentences(text: string): string[] {
     .filter(s => s.length > 2);
 }
 
-async function playServerTTS(text: string, onWord?: (word: string) => void): Promise<void> {
+async function playServerTTS(text: string): Promise<void> {
   try {
     const url = `${BASE_URL}/api/tts?text=${encodeURIComponent(text)}`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error("TTS server error");
-    // Verify the response is actually audio (not HTML fallback page)
+    const r = await fetch(url, { credentials: "omit" });
+    if (!r.ok) throw new Error(`TTS HTTP ${r.status}`);
     const contentType = r.headers.get("content-type") || "";
-    if (!contentType.includes("audio")) throw new Error("TTS returned non-audio response");
-    const blob = await r.blob();
-    const objectUrl = URL.createObjectURL(blob);
+    if (!contentType.includes("audio")) throw new Error("TTS non-audio response");
+
+    const arrayBuffer = await r.arrayBuffer();
+    const ctx = getAudioContext();
+
+    // Ensure context is running (it should be after unlockAudio was called on tap)
+    if (ctx.state === "suspended") await ctx.resume();
+
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
     return new Promise((resolve) => {
-      const audio = new Audio(objectUrl);
-      currentAudio = audio;
-      audio.onended = () => {
-        URL.revokeObjectURL(objectUrl);
-        currentAudio = null;
+      _currentResolve = resolve;
+      const source = ctx.createBufferSource();
+      _currentSource = source;
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
+      source.onended = () => {
+        _currentSource = null;
+        _currentResolve = null;
         resolve();
       };
-      audio.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        currentAudio = null;
-        resolve(); // Don't reject — fall through gracefully
-      };
-      audio.play().catch(() => resolve());
+      source.start(0);
     });
-  } catch {
-    // Fall back to browser TTS if server fails
-    return playBrowserTTS(text, onWord);
+  } catch (err) {
+    console.warn("[TTS] Server TTS failed, falling back to browser:", err);
+    return playBrowserTTS(text);
   }
 }
 
-function playBrowserTTS(text: string, onWord?: (word: string) => void): Promise<void> {
+function playBrowserTTS(text: string): Promise<void> {
   return new Promise((resolve) => {
     if (!window.speechSynthesis) { resolve(); return; }
     window.speechSynthesis.cancel();
@@ -99,39 +114,23 @@ function playBrowserTTS(text: string, onWord?: (word: string) => void): Promise<
     );
     if (femaleVoice) utterance.voice = femaleVoice;
 
-    if (onWord) {
-      utterance.onboundary = (e) => {
-        if (e.name === "word") {
-          const word = text.slice(e.charIndex, e.charIndex + e.charLength);
-          onWord(word);
-        }
-      };
-    }
-
-    utterance.onend = () => { speechSynthesisActive = false; resolve(); };
-    utterance.onerror = () => { speechSynthesisActive = false; resolve(); };
-
-    speechSynthesisActive = true;
+    utterance.onend = () => resolve();
+    utterance.onerror = () => resolve();
     window.speechSynthesis.speak(utterance);
   });
 }
 
 // Main TTS function — sentence-chunked for reliability on iOS
-export async function speakText(
-  text: string,
-  onWord?: (word: string) => void,
-  onSentenceStart?: (sentence: string) => void
-): Promise<void> {
+export async function speakText(text: string): Promise<void> {
   stopTTS();
   const mode = getTtsMode();
   const sentences = splitSentences(text);
 
   for (const sentence of sentences) {
-    if (onSentenceStart) onSentenceStart(sentence);
     if (mode === "server") {
-      await playServerTTS(sentence, onWord);
+      await playServerTTS(sentence);
     } else {
-      await playBrowserTTS(sentence, onWord);
+      await playBrowserTTS(sentence);
     }
   }
 }
@@ -152,7 +151,7 @@ export function useTTS() {
   ) => {
     speakingRef.current = true;
     callbacks?.onStart?.();
-    await speakText(text, callbacks?.onWord);
+    await speakText(text);
     speakingRef.current = false;
     callbacks?.onEnd?.();
   }, []);
