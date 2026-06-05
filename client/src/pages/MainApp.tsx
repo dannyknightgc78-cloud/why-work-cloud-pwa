@@ -39,6 +39,22 @@ export default function MainApp() {
           {activeTab === "settings" && <SettingsScreen />}
         </div>
 
+        {/* Copyright bar */}
+        <div style={{
+          flexShrink: 0,
+          background: "rgba(0,0,0,0.95)",
+          borderTop: "1px solid rgba(0,212,255,0.06)",
+          textAlign: "center",
+          padding: "3px 8px 2px",
+          fontSize: 9,
+          fontFamily: "'Orbitron', sans-serif",
+          letterSpacing: "0.08em",
+          color: "rgba(0,212,255,0.35)",
+          userSelect: "none",
+        }}>
+          © {new Date().getFullYear()} Danny Cloud Services. All rights reserved. Unauthorised use prohibited.
+        </div>
+
         {/* Bottom navigation */}
         <nav style={{
           display: "flex",

@@ -185,6 +185,21 @@ export default function SplashScreen({ onComplete }: Props) {
             <span style={{ animation: "type-cursor 0.8s infinite", borderRight: "1px solid #00d4ff" }}>&nbsp;</span>
           )}
         </div>
+
+        {/* Copyright notice */}
+        <div style={{
+          position: "absolute",
+          bottom: 16,
+          left: 0, right: 0,
+          textAlign: "center",
+          fontFamily: "'Orbitron', sans-serif",
+          fontSize: 8,
+          letterSpacing: "0.12em",
+          color: "rgba(0,212,255,0.3)",
+          userSelect: "none",
+        }}>
+          © {new Date().getFullYear()} Danny Cloud Services. All rights reserved.
+        </div>
       </div>
     </div>
   );
