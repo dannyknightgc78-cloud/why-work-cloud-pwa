@@ -10,7 +10,7 @@ let _gainNode: GainNode | null = null;
 let _currentSource: AudioBufferSourceNode | null = null;
 let _currentResolve: (() => void) | null = null;
 
-function getAudioContext(): AudioContext {
+export function getAudioContext(): AudioContext {
   if (!_ctx || _ctx.state === "closed") {
     _ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     _gainNode = _ctx.createGain();

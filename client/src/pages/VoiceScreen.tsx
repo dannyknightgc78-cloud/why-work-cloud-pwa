@@ -2,7 +2,7 @@
 // Design: Large mic button centre-screen, Genie avatar above, transcript below
 // TTS: uses useTTS hook — server-side audio (iOS-safe) with browser fallback
 import { useState, useRef } from "react";
-import { useTTS, unlockAudio } from "../hooks/useTTS";
+import { useTTS, unlockAudio, getAudioContext } from "../hooks/useTTS";
 
 const BASE_URL = "https://genie.dannygc.cloud";
 
@@ -93,6 +93,13 @@ export default function VoiceScreen() {
         const answer = await askGenie(q);
         setResponse(answer);
         setState("speaking");
+        // iOS requires a short pause after mic releases the audio session
+        // before AudioContext can resume and play TTS audio
+        await new Promise(resolve => setTimeout(resolve, 400));
+        try {
+          const ctx = getAudioContext();
+          if (ctx.state === "suspended") await ctx.resume();
+        } catch {}
         await speak(answer, {
           onEnd: () => setState("idle"),
         });
