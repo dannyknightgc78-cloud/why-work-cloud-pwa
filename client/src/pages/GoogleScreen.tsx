@@ -1,14 +1,26 @@
 // WHY WORK CLOUD IT PWA — Google Screen
-// Design: Obsidian Command Interface — Gmail, Drive, Calendar panels
-import { useState, useEffect } from "react";
+// Cross-domain auth: after OAuth, Genie server redirects to app.dannygc.cloud?genie_token=XXX
+// Token is stored in localStorage and sent as X-Genie-Session header on all API calls
+import { useState, useEffect, useCallback } from "react";
 
 const BASE_URL = "https://genie.dannygc.cloud";
+const TOKEN_KEY = "genie_google_token";
 
 interface Email { id: string; from: string; subject: string; snippet: string; date: string; }
 interface DriveFile { id: string; name: string; mimeType: string; modifiedTime: string; }
 interface CalEvent { id: string; summary: string; start: string; end: string; }
+interface GoogleUser { email: string; name: string; picture: string; }
 
 type Panel = "gmail" | "drive" | "calendar";
+
+function getToken(): string { return localStorage.getItem(TOKEN_KEY) || ""; }
+function setToken(t: string) { localStorage.setItem(TOKEN_KEY, t); }
+function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+
+function genieHeaders(): HeadersInit {
+  const token = getToken();
+  return token ? { "X-Genie-Session": token } : {};
+}
 
 function mimeIcon(mimeType: string) {
   if (mimeType.includes("folder")) return "📁";
@@ -21,6 +33,7 @@ function mimeIcon(mimeType: string) {
 }
 
 export default function GoogleScreen() {
+  const [user, setUser] = useState<GoogleUser | null>(null);
   const [connected, setConnected] = useState(false);
   const [panel, setPanel] = useState<Panel>("gmail");
   const [emails, setEmails] = useState<Email[]>([]);
@@ -34,50 +47,89 @@ export default function GoogleScreen() {
   const [composeBody, setComposeBody] = useState("");
   const [sendStatus, setSendStatus] = useState("");
 
+  // On mount: capture token from URL if redirected from OAuth
   useEffect(() => {
-    // Check if Google is connected
-    fetch(`${BASE_URL}/api/google/status`, { credentials: "include" })
-      .then(r => r.json())
-      .then(d => setConnected(d.connected))
-      .catch(() => setConnected(false));
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("genie_token");
+    const googleStatus = params.get("google");
+    if (urlToken) {
+      setToken(urlToken);
+      // Clean the URL
+      const clean = window.location.pathname;
+      window.history.replaceState({}, "", clean);
+    }
+    if (googleStatus === "error") {
+      setError("Google sign-in failed. Please try again.");
+    }
+    // Check status with stored token
+    checkStatus();
+  }, []);
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const r = await fetch(`${BASE_URL}/api/google/status`, {
+        headers: genieHeaders(),
+      });
+      const d = await r.json();
+      if (d.connected) {
+        setConnected(true);
+        setUser({ email: d.email, name: d.name, picture: d.picture });
+      } else {
+        setConnected(false);
+        setUser(null);
+      }
+    } catch {
+      setConnected(false);
+    }
   }, []);
 
   const connectGoogle = () => {
+    // Redirect to Genie OAuth — callback will redirect back to app.dannygc.cloud with token
     window.location.href = `${BASE_URL}/api/auth/google`;
   };
 
-  const loadGmail = async () => {
+  const disconnectGoogle = async () => {
+    try {
+      await fetch(`${BASE_URL}/api/auth/logout`, { headers: genieHeaders() });
+    } catch {}
+    clearToken();
+    setConnected(false);
+    setUser(null);
+    setEmails([]); setFiles([]); setEvents([]);
+  };
+
+  const loadGmail = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const r = await fetch(`${BASE_URL}/api/google/gmail/inbox`, { credentials: "include" });
+      const r = await fetch(`${BASE_URL}/api/google/gmail/inbox`, { headers: genieHeaders() });
       if (!r.ok) throw new Error("Not connected");
       const d = await r.json();
       setEmails(d.emails || []);
-    } catch { setError("Connect your Google account first."); }
+    } catch { setError("Could not load Gmail. Try reconnecting."); }
     setLoading(false);
-  };
+  }, []);
 
-  const loadDrive = async () => {
+  const loadDrive = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const r = await fetch(`${BASE_URL}/api/google/drive/files`, { credentials: "include" });
+      const r = await fetch(`${BASE_URL}/api/google/drive/files`, { headers: genieHeaders() });
       if (!r.ok) throw new Error("Not connected");
       const d = await r.json();
       setFiles(d.files || []);
-    } catch { setError("Connect your Google account first."); }
+    } catch { setError("Could not load Drive. Try reconnecting."); }
     setLoading(false);
-  };
+  }, []);
 
-  const loadCalendar = async () => {
+  const loadCalendar = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const r = await fetch(`${BASE_URL}/api/google/calendar/events`, { credentials: "include" });
+      const r = await fetch(`${BASE_URL}/api/google/calendar/events`, { headers: genieHeaders() });
       if (!r.ok) throw new Error("Not connected");
       const d = await r.json();
       setEvents(d.events || []);
-    } catch { setError("Connect your Google account first."); }
+    } catch { setError("Could not load Calendar. Try reconnecting."); }
     setLoading(false);
-  };
+  }, []);
 
   const handlePanelChange = (p: Panel) => {
     setPanel(p); setError("");
@@ -88,19 +140,22 @@ export default function GoogleScreen() {
 
   useEffect(() => {
     if (connected) void loadGmail();
-  }, [connected]);
+  }, [connected, loadGmail]);
 
   const sendEmail = async () => {
     setSendStatus("Sending...");
     try {
       const r = await fetch(`${BASE_URL}/api/google/gmail/send`, {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...genieHeaders() },
         body: JSON.stringify({ to: composeTo, subject: composeSubject, body: composeBody }),
       });
       if (!r.ok) throw new Error("Failed");
       setSendStatus("✅ Sent!");
-      setTimeout(() => { setComposeOpen(false); setSendStatus(""); setComposeTo(""); setComposeSubject(""); setComposeBody(""); }, 2000);
+      setTimeout(() => {
+        setComposeOpen(false); setSendStatus("");
+        setComposeTo(""); setComposeSubject(""); setComposeBody("");
+      }, 2000);
     } catch { setSendStatus("❌ Failed to send"); }
   };
 
@@ -122,8 +177,9 @@ export default function GoogleScreen() {
           CONNECT GOOGLE
         </div>
         <div style={{ fontSize: 14, color: "rgba(224,244,255,0.5)", textAlign: "center", lineHeight: 1.6 }}>
-          Link your Google account to access Gmail, Drive, and Calendar through Genie.
+          Link your Google account so Genie can access Gmail, Drive, and Calendar on your behalf.
         </div>
+        {error && <div style={{ color: "#ff4466", fontSize: 13, textAlign: "center" }}>{error}</div>}
         <button
           onClick={connectGoogle}
           style={{
@@ -137,12 +193,35 @@ export default function GoogleScreen() {
         >
           CONNECT GOOGLE ACCOUNT
         </button>
+        <div style={{ fontSize: 11, color: "rgba(224,244,255,0.3)", textAlign: "center" }}>
+          You will be redirected to Google to authorise access. Your credentials are stored securely on your Genie server only.
+        </div>
       </div>
     );
   }
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#000" }}>
+      {/* User header */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
+        borderBottom: "1px solid rgba(0,212,255,0.1)", flexShrink: 0,
+        background: "rgba(0,0,0,0.9)",
+      }}>
+        {user?.picture && (
+          <img src={user.picture} alt="" style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid rgba(0,212,255,0.3)" }} />
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: "#e0f4ff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.name}</div>
+          <div style={{ fontSize: 10, color: "rgba(224,244,255,0.4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.email}</div>
+        </div>
+        <button onClick={() => void disconnectGoogle()} style={{
+          padding: "4px 10px", borderRadius: 6, fontSize: 10,
+          background: "rgba(255,68,102,0.08)", border: "1px solid rgba(255,68,102,0.3)",
+          color: "#ff4466", cursor: "pointer", fontFamily: "'Orbitron', sans-serif",
+        }}>DISCONNECT</button>
+      </div>
+
       {/* Panel tabs */}
       <div style={{
         display: "flex", borderBottom: "1px solid rgba(0,212,255,0.1)",
@@ -190,13 +269,16 @@ export default function GoogleScreen() {
         {error && <div style={{ color: "#ff4466", fontSize: 13, padding: "16px 0", textAlign: "center" }}>{error}</div>}
 
         {/* Gmail */}
+        {panel === "gmail" && !loading && emails.length === 0 && !error && (
+          <div style={{ textAlign: "center", padding: 32, color: "rgba(224,244,255,0.3)", fontSize: 13 }}>No emails found</div>
+        )}
         {panel === "gmail" && !loading && emails.map(email => (
           <div key={email.id} className="glass-panel animate-slide-up" style={{
             padding: "12px 14px", borderRadius: 10, marginBottom: 8,
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <div style={{ fontSize: 12, color: "#00d4ff", fontWeight: 600 }}>{email.from}</div>
-              <div style={{ fontSize: 10, color: "rgba(224,244,255,0.3)" }}>{email.date}</div>
+              <div style={{ fontSize: 12, color: "#00d4ff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{email.from}</div>
+              <div style={{ fontSize: 10, color: "rgba(224,244,255,0.3)", flexShrink: 0 }}>{email.date}</div>
             </div>
             <div style={{ fontSize: 13, color: "#e0f4ff", fontWeight: 500, marginBottom: 4 }}>{email.subject}</div>
             <div style={{ fontSize: 12, color: "rgba(224,244,255,0.5)", lineHeight: 1.4 }}>{email.snippet}</div>
@@ -204,6 +286,9 @@ export default function GoogleScreen() {
         ))}
 
         {/* Drive */}
+        {panel === "drive" && !loading && files.length === 0 && !error && (
+          <div style={{ textAlign: "center", padding: 32, color: "rgba(224,244,255,0.3)", fontSize: 13 }}>No files found</div>
+        )}
         {panel === "drive" && !loading && files.map(file => (
           <div key={file.id} className="glass-panel animate-slide-up" style={{
             padding: "12px 14px", borderRadius: 10, marginBottom: 8,
@@ -218,6 +303,9 @@ export default function GoogleScreen() {
         ))}
 
         {/* Calendar */}
+        {panel === "calendar" && !loading && events.length === 0 && !error && (
+          <div style={{ textAlign: "center", padding: 32, color: "rgba(224,244,255,0.3)", fontSize: 13 }}>No upcoming events</div>
+        )}
         {panel === "calendar" && !loading && events.map(ev => (
           <div key={ev.id} className="glass-panel animate-slide-up" style={{
             padding: "12px 14px", borderRadius: 10, marginBottom: 8,
@@ -251,6 +339,7 @@ export default function GoogleScreen() {
                   width: "100%", padding: "10px 12px", marginBottom: 10, borderRadius: 8,
                   background: "rgba(0,212,255,0.05)", border: "1px solid rgba(0,212,255,0.2)",
                   color: "#e0f4ff", fontSize: 14, fontFamily: "'Inter', sans-serif",
+                  boxSizing: "border-box",
                 }}
               />
             ))}
@@ -263,6 +352,7 @@ export default function GoogleScreen() {
                 width: "100%", padding: "10px 12px", marginBottom: 12, borderRadius: 8,
                 background: "rgba(0,212,255,0.05)", border: "1px solid rgba(0,212,255,0.2)",
                 color: "#e0f4ff", fontSize: 14, fontFamily: "'Inter', sans-serif", resize: "none",
+                boxSizing: "border-box",
               }}
             />
             {sendStatus && <div style={{ color: sendStatus.includes("✅") ? "#00ff88" : "#ff4466", fontSize: 13, marginBottom: 8 }}>{sendStatus}</div>}
