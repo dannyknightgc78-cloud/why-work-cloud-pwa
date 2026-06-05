@@ -51,6 +51,9 @@ async function playServerTTS(text: string, onWord?: (word: string) => void): Pro
     const url = `${BASE_URL}/api/tts?text=${encodeURIComponent(text)}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error("TTS server error");
+    // Verify the response is actually audio (not HTML fallback page)
+    const contentType = r.headers.get("content-type") || "";
+    if (!contentType.includes("audio")) throw new Error("TTS returned non-audio response");
     const blob = await r.blob();
     const objectUrl = URL.createObjectURL(blob);
 

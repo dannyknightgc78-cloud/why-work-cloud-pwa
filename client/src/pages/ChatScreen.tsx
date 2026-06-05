@@ -168,7 +168,7 @@ export default function ChatScreen() {
             boxShadow: `0 0 16px ${stateColor}80`,
             transition: "border-color 0.3s, box-shadow 0.3s",
           }}>
-            <img src="/manus-storage/genie-avatar_b37c1327.png" alt="Genie" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <img src="https://genie.dannygc.cloud/api/r2/get/assets/genie-avatar.png" alt="Genie" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </div>
           <div style={{
             position: "absolute", bottom: 2, right: 2,
@@ -239,7 +239,7 @@ export default function ChatScreen() {
                 width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
                 overflow: "hidden", border: "1px solid rgba(0,212,255,0.3)", marginTop: 4,
               }}>
-                <img src="/manus-storage/genie-avatar_b37c1327.png" alt="G" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src="https://genie.dannygc.cloud/api/r2/get/assets/genie-avatar.png" alt="G" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
             )}
             <div className={msg.role === "user" ? "msg-user" : "msg-genie"} style={{

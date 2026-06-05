@@ -133,7 +133,7 @@ export default function SplashScreen({ onComplete }: Props) {
           }}
         >
           <img
-            src="/manus-storage/genie-avatar_b37c1327.png"
+            src="https://genie.dannygc.cloud/api/r2/get/assets/genie-avatar.png"
             alt="Genie"
             style={{
               width: 220,

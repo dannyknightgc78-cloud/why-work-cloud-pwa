@@ -148,7 +148,7 @@ export default function VoiceScreen() {
           boxShadow: `0 0 30px ${stateColor}80`,
           transition: "border-color 0.3s, box-shadow 0.3s",
         }}>
-          <img src="/manus-storage/genie-avatar_b37c1327.png" alt="Genie" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src="https://genie.dannygc.cloud/api/r2/get/assets/genie-avatar.png" alt="Genie" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         </div>
         {state === "thinking" && (
           <div style={{ position: "absolute", bottom: -24, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 4 }}>
