@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useGoogleAuth } from "../contexts/GoogleAuthContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
+import { getTtsVolume, setTtsVolume, getTtsSpeed, setTtsSpeed, speakText } from "../hooks/useTTS";
 
 const BASE_URL = "https://genie.dannygc.cloud";
 
@@ -24,6 +25,9 @@ export default function SettingsScreen() {
   const [ttsMode, setTtsMode] = useState<"server" | "browser">(() =>
     (localStorage.getItem("genie_tts_mode") as "server" | "browser") || "server"
   );
+  const [ttsVolume, setTtsVolumeState] = useState(() => getTtsVolume());
+  const [ttsSpeed, setTtsSpeedState] = useState(() => getTtsSpeed());
+  const [ttsTestStatus, setTtsTestStatus] = useState("");
 
   const saveSms = () => {
     localStorage.setItem("genie_sms_phone", smsPhone);
@@ -57,6 +61,22 @@ export default function SettingsScreen() {
   const saveTtsMode = (mode: "server" | "browser") => {
     setTtsMode(mode);
     localStorage.setItem("genie_tts_mode", mode);
+  };
+
+  const handleVolumeChange = (v: number) => {
+    setTtsVolumeState(v);
+    setTtsVolume(v);
+  };
+
+  const handleSpeedChange = (s: number) => {
+    setTtsSpeedState(s);
+    setTtsSpeed(s);
+  };
+
+  const testVoice = async () => {
+    setTtsTestStatus("Speaking...");
+    await speakText("Hello Danny, I am Genie. Your AI assistant is ready.");
+    setTtsTestStatus("");
   };
 
   const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
@@ -212,7 +232,7 @@ export default function SettingsScreen() {
         <div style={{ fontSize: 12, color: "rgba(224,244,255,0.5)", marginBottom: 12 }}>
           Server mode uses Genie's audio API (works on iPhone). Browser mode uses device speech synthesis.
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           {(["server", "browser"] as const).map(mode => (
             <button key={mode} onClick={() => saveTtsMode(mode)} style={{
               flex: 1, padding: "10px", borderRadius: 10,
@@ -226,6 +246,56 @@ export default function SettingsScreen() {
             </button>
           ))}
         </div>
+
+        {/* Volume Slider */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 11, color: "rgba(224,244,255,0.5)" }}>VOLUME</span>
+            <span style={{ fontSize: 11, color: "#00d4ff", fontFamily: "'Orbitron', sans-serif" }}>
+              {Math.round(ttsVolume * 100)}%
+            </span>
+          </div>
+          <input
+            type="range" min={0} max={1} step={0.05}
+            value={ttsVolume}
+            onChange={e => handleVolumeChange(parseFloat(e.target.value))}
+            style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer" }}
+          />
+        </div>
+
+        {/* Speed Slider */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 11, color: "rgba(224,244,255,0.5)" }}>SPEED</span>
+            <span style={{ fontSize: 11, color: "#00d4ff", fontFamily: "'Orbitron', sans-serif" }}>
+              {ttsSpeed.toFixed(1)}×
+            </span>
+          </div>
+          <input
+            type="range" min={0.5} max={2.0} step={0.1}
+            value={ttsSpeed}
+            onChange={e => handleSpeedChange(parseFloat(e.target.value))}
+            style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer" }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+            <span style={{ fontSize: 10, color: "rgba(224,244,255,0.3)" }}>0.5× Slow</span>
+            <span style={{ fontSize: 10, color: "rgba(224,244,255,0.3)" }}>1.0× Normal</span>
+            <span style={{ fontSize: 10, color: "rgba(224,244,255,0.3)" }}>2.0× Fast</span>
+          </div>
+        </div>
+
+        {/* Test Voice Button */}
+        <button
+          onClick={() => void testVoice()}
+          style={{
+            width: "100%", padding: "10px", borderRadius: 10,
+            background: "rgba(0,212,255,0.1)", border: "1px solid rgba(0,212,255,0.3)",
+            color: "#00d4ff", fontFamily: "'Orbitron', sans-serif", fontSize: 11,
+            fontWeight: 600, cursor: "pointer",
+          }}
+        >
+          {ttsTestStatus || "▶ TEST VOICE"}
+        </button>
       </Section>
 
       {/* Push Notifications */}

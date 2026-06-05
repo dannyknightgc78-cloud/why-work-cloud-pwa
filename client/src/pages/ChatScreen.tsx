@@ -2,7 +2,7 @@
 // Design: Genie avatar top-center, floating animated, chat messages below, input at bottom
 // TTS: uses useTTS hook — server-side audio (iOS-safe) with browser fallback
 import { useState, useRef, useEffect } from "react";
-import { useTTS, unlockAudio } from "../hooks/useTTS";
+import { useTTS, unlockAudio, speakText, stopTTS } from "../hooks/useTTS";
 
 const BASE_URL = "https://genie.dannygc.cloud";
 
@@ -69,6 +69,7 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [genieState, setGenieState] = useState<GenieState>("idle");
   const [isLoading, setIsLoading] = useState(false);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const [smsMode, setSmsMode] = useState(false);
   const [smsTo, setSmsTo] = useState(() => localStorage.getItem("genie_sms_phone") || "");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -242,18 +243,47 @@ export default function ChatScreen() {
                 <img src="https://genie.dannygc.cloud/api/r2/get/assets/genie-avatar.png" alt="G" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
             )}
-            <div className={msg.role === "user" ? "msg-user" : "msg-genie"} style={{
-              maxWidth: "78%", padding: "10px 14px",
-              fontSize: 14, lineHeight: 1.5, color: "#e0f4ff",
-              whiteSpace: "pre-wrap", wordBreak: "break-word",
-            }}>
-              {msg.content === "" && msg.role === "genie" ? (
-                <div style={{ display: "flex", gap: 4, padding: "4px 0" }}>
-                  <div className="thinking-dot" />
-                  <div className="thinking-dot" />
-                  <div className="thinking-dot" />
-                </div>
-              ) : msg.content}
+            <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", gap: 4 }}>
+              <div className={msg.role === "user" ? "msg-user" : "msg-genie"} style={{
+                padding: "10px 14px",
+                fontSize: 14, lineHeight: 1.5, color: "#e0f4ff",
+                whiteSpace: "pre-wrap", wordBreak: "break-word",
+              }}>
+                {msg.content === "" && msg.role === "genie" ? (
+                  <div style={{ display: "flex", gap: 4, padding: "4px 0" }}>
+                    <div className="thinking-dot" />
+                    <div className="thinking-dot" />
+                    <div className="thinking-dot" />
+                  </div>
+                ) : msg.content}
+              </div>
+              {/* Read Aloud button — only on Genie messages with content */}
+              {msg.role === "genie" && msg.content.length > 0 && (
+                <button
+                  onClick={() => {
+                    unlockAudio();
+                    if (speakingMsgId === msg.id) {
+                      stopTTS();
+                      setSpeakingMsgId(null);
+                    } else {
+                      stopTTS();
+                      setSpeakingMsgId(msg.id);
+                      void speakText(msg.content).then(() => setSpeakingMsgId(null));
+                    }
+                  }}
+                  style={{
+                    alignSelf: "flex-start",
+                    padding: "3px 10px", borderRadius: 6, fontSize: 10,
+                    background: speakingMsgId === msg.id ? "rgba(0,255,136,0.1)" : "rgba(0,212,255,0.06)",
+                    border: `1px solid ${speakingMsgId === msg.id ? "rgba(0,255,136,0.4)" : "rgba(0,212,255,0.15)"}`,
+                    color: speakingMsgId === msg.id ? "#00ff88" : "rgba(0,212,255,0.6)",
+                    cursor: "pointer", fontFamily: "'Orbitron', sans-serif",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {speakingMsgId === msg.id ? "⏹ STOP" : "▶ READ"}
+                </button>
+              )}
             </div>
           </div>
         ))}
